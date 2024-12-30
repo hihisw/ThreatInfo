@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threat Info Management</title>
+    <script type="module" src="ethers.min.js"></script>
+</head>
+<body>
+    <h1>Threat Information Management System</h1>
+    <button id="connectButton">Connect to MetaMask</button>
+    <div id="status"></div>
+
+    <div id="adminSection" style="display: none;">
+        <h2>Admin Functions</h2>
+
+        <h3>Set Report Window Configuration</h3>
+        <input type="number" id="reportWindow" placeholder="Report Window (seconds)">
+        <input type="number" id="maxReports" placeholder="Max Reports">
+        <button id="setWindowConfigButton">Set Configuration</button>
+
+        <h3>Manage Whitelist</h3>
+        <input type="text" id="whitelistAddress" placeholder="User Address">
+        <button id="addToWhitelistButton">Add to Whitelist</button>
+        <button id="removeFromWhitelistButton">Remove from Whitelist</button>
+
+        <h3>Manage Auditors</h3>
+        <input type="text" id="auditorAddress" placeholder="Auditor Address">
+        <button id="addAuditorButton">Add Auditor</button>
+        <button id="removeAuditorButton">Remove Auditor</button>
+    </div>
+
+    <div id="auditorSection" style="display: none;">
+        <h2>Auditor Functions</h2>
+
+        <h3>Mark Threat as Resolved</h3>
+        <input type="number" id="resolveThreatId" placeholder="Threat ID">
+        <button id="markResolvedButton">Mark Resolved</button>
+    </div>
+
+    <h2>User Functions</h2>
+
+    <h3>Report Threat</h3>
+    <textarea id="threatDescription" placeholder="Description"></textarea>
+    <input type="number" id="threatLevel" placeholder="Level (1-3)">
+    <button id="reportThreatButton">Report Threat</button>
+
+    <h3>Check Threat Status</h3>
+    <input type="number" id="threatId" placeholder="Threat ID">
+    <button id="checkThreatButton">Check Status</button>
+
+    <h3>Update Threat</h3>
+    <input type="number" id="updateThreatId" placeholder="Threat ID">
+    <textarea id="updateThreatDescription" placeholder="New Description"></textarea>
+    <input type="number" id="updateThreatLevel" placeholder="New Level (1-3)">
+    <button id="updateThreatButton">Update Threat</button>
+
+    <h3>Delete Threat</h3>
+    <input type="number" id="deleteThreatId" placeholder="Threat ID">
+    <button id="deleteThreatButton">Delete Threat</button>
+
+    <h3>View All Threats</h3>
+    <button id="viewAllThreatsButton">View All Threats</button>
+    <div id="threatList"></div>
+
+    <script type="module">
+        import { ethers } from "./ethers.min.js";
+
+        const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+        const contractABI = [
+    {
+      "inputs": [
+        {
+          "internalType": "uint16",
+          "name": "_maxReportsPerWindow",
+          "type": "uint16"
+        },
+        {
+          "internalType": "uint32",
+          "name": "_reportWindow",
+          "type": "uint32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "EmptyDescription",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "reporter",
+          "type": "address"
+        }
+      ],
+      "name": "ExceededMaxReportsPerWindow",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint8",
+          "name": "level",
+          "type": "uint8"
+        }
+      ],
+      "name": "InvalidThreatLevel",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidWindowConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotAuthorized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotOwner",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "reporter",
+          "type": "address"
+        }
+      ],
+      "name": "NotWhitelisted",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "status",
+          "type": "bool"
+        }
+      ],
+      "name": "AuditorUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "threatId",
+          "type": "uint256"
+        }
+      ],
+      "name": "ThreatDeleted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "threatId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "reporter",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "level",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint32",
+          "name": "timestamp",
+          "type": "uint32"
+        }
+      ],
+      "name": "ThreatReported",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "threatId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "newDescription",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "newLevel",
+          "type": "uint8"
+        }
+      ],
+      "name": "ThreatUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "status",
+          "type": "bool"
+        }
+      ],
+      "name": "WhitelistUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint32",
+          "name": "newWindow",
+          "type": "uint32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "newMaxReports",
+          "type": "uint16"
+        }
+      ],
+      "name": "WindowConfigUpdated",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "auditors",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_threatId",
+          "type": "uint256"
+        }
+      ],
+      "name": "deleteThreat",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "start",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "count",
+          "type": "uint256"
+        }
+      ],
+      "name": "getThreats",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "reporter",
+              "type": "address"
+            },
+            {
+              "internalType": "string",
+              "name": "description",
+              "type": "string"
+            },
+            {
+              "internalType": "uint8",
+              "name": "level",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint32",
+              "name": "timestamp",
+              "type": "uint32"
+            },
+            {
+              "internalType": "bool",
+              "name": "isDeleted",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct ThreatInfo.Threat[]",
+          "name": "",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_threatId",
+          "type": "uint256"
+        }
+      ],
+      "name": "markThreatResolved",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "maxReportsPerWindow",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "_level",
+          "type": "uint8"
+        }
+      ],
+      "name": "reportThreat",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "reportWindow",
+      "outputs": [
+        {
+          "internalType": "uint32",
+          "name": "",
+          "type": "uint32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "threatCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "threats",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "reporter",
+          "type": "address"
+        },
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "level",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint32",
+          "name": "timestamp",
+          "type": "uint32"
+        },
+        {
+          "internalType": "bool",
+          "name": "isDeleted",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_address",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "_status",
+          "type": "bool"
+        }
+      ],
+      "name": "updateAuditor",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint16",
+          "name": "_newMaxReports",
+          "type": "uint16"
+        }
+      ],
+      "name": "updateMaxReportsPerWindow",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint32",
+          "name": "_newWindow",
+          "type": "uint32"
+        }
+      ],
+      "name": "updateReportWindow",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_threatId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "_description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint8",
+          "name": "_level",
+          "type": "uint8"
+        }
+      ],
+      "name": "updateThreat",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_address",
+          "type": "address"
+        },
+        {
+          "internalType": "bool",
+          "name": "_status",
+          "type": "bool"
+        }
+      ],
+      "name": "updateWhitelist",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "userLastReportTime",
+      "outputs": [
+        {
+          "internalType": "uint32",
+          "name": "",
+          "type": "uint32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "userReportCountInWindow",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "name": "whitelist",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ];
+
+        let provider, signer, contract, currentAccount;
+
+        document.getElementById("connectButton").onclick = async () => {
+            if (typeof window.ethereum !== "undefined") {
+                provider = new ethers.BrowserProvider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = await provider.getSigner();
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+                currentAccount = await signer.getAddress();
+                document.getElementById("status").innerText = `Connected Account: ${currentAccount}`;
+
+                // Check if the user is the owner
+                const owner = await contract.owner();
+                if (currentAccount.toLowerCase() === owner.toLowerCase()) {
+                    document.getElementById("adminSection").style.display = "block";
+                }
+
+                // Check if the user is an auditor
+                const isAuditor = await contract.auditors(currentAccount);
+                if (isAuditor) {
+                    document.getElementById("auditorSection").style.display = "block";
+                }
+            } else {
+                alert("Please install MetaMask");
+            }
+        };
+
+        document.getElementById("setWindowConfigButton").onclick = async () => {
+            const reportWindow = document.getElementById("reportWindow").value;
+            const maxReports = document.getElementById("maxReports").value;
+            try {
+                const tx1 = await contract.updateReportWindow(reportWindow);
+                await tx1.wait();
+                const tx2 = await contract.updateMaxReportsPerWindow(maxReports);
+                await tx2.wait();
+                alert("Configuration updated successfully");
+            } catch (error) {
+                console.error("Failed to set configuration", error);
+            }
+        };
+
+        document.getElementById("addToWhitelistButton").onclick = async () => {
+            const address = document.getElementById("whitelistAddress").value;
+            try {
+                const tx = await contract.updateWhitelist(address, true);
+                await tx.wait();
+                alert("Address added to whitelist");
+            } catch (error) {
+                console.error("Failed to add to whitelist", error);
+            }
+        };
+
+        document.getElementById("removeFromWhitelistButton").onclick = async () => {
+            const address = document.getElementById("whitelistAddress").value;
+            try {
+                const tx = await contract.updateWhitelist(address, false);
+                await tx.wait();
+                alert("Address removed from whitelist");
+            } catch (error) {
+                console.error("Failed to remove from whitelist", error);
+            }
+        };
+
+        document.getElementById("addAuditorButton").onclick = async () => {
+            const address = document.getElementById("auditorAddress").value;
+            try {
+                const tx = await contract.updateAuditor(address, true);
+                await tx.wait();
+                alert("Auditor added successfully");
+            } catch (error) {
+                console.error("Failed to add auditor", error);
+            }
+        };
+
+        document.getElementById("removeAuditorButton").onclick = async () => {
+            const address = document.getElementById("auditorAddress").value;
+            try {
+                const tx = await contract.updateAuditor(address, false);
+                await tx.wait();
+                alert("Auditor removed successfully");
+            } catch (error) {
+                console.error("Failed to remove auditor", error);
+            }
+        };
+
+        document.getElementById("reportThreatButton").onclick = async () => {
+            const description = document.getElementById("threatDescription").value;
+            const level = document.getElementById("threatLevel").value;
+            try {
+                const tx = await contract.reportThreat(description, level);
+                await tx.wait();
+                alert("Threat reported successfully");
+            } catch (error) {
+                console.error("Failed to report threat", error);
+            }
+        };
+
+        document.getElementById("checkThreatButton").onclick = async () => {
+            const threatId = document.getElementById("threatId").value;
+            try {
+                const threat = await contract.threats(threatId);
+                alert(`Threat ID: ${threatId}\nDescription: ${threat.description}\nLevel: ${threat.level}\nTimestamp: ${threat.timestamp}`);
+            } catch (error) {
+                console.error("Failed to check threat", error);
+            }
+        };
+
+        document.getElementById("updateThreatButton").onclick = async () => {
+            const threatId = document.getElementById("updateThreatId").value;
+            const description = document.getElementById("updateThreatDescription").value;
+            const level = document.getElementById("updateThreatLevel").value;
+            try {
+                const tx = await contract.updateThreat(threatId, description, level);
+                await tx.wait();
+                alert("Threat updated successfully");
+            } catch (error) {
+                console.error("Failed to update threat", error);
+            }
+        };
+
+        document.getElementById("deleteThreatButton").onclick = async () => {
+            const threatId = document.getElementById("deleteThreatId").value;
+            try {
+                const tx = await contract.deleteThreat(threatId);
+                await tx.wait();
+                alert("Threat deleted successfully");
+            } catch (error) {
+                console.error("Failed to delete threat", error);
+            }
+        };
+
+        document.getElementById("markResolvedButton").onclick = async () => {
+            const threatId = document.getElementById("resolveThreatId").value;
+            try {
+                const tx = await contract.markThreatResolved(threatId);
+                await tx.wait();
+                alert("Threat marked as resolved");
+            } catch (error) {
+                console.error("Failed to mark threat as resolved", error);
+            }
+        };
+
+        document.getElementById("viewAllThreatsButton").onclick = async () => {
+            try {
+                const threatCount = await contract.threatCount();
+                const threatListDiv = document.getElementById("threatList");
+                threatListDiv.innerHTML = ""; // Clear previous content
+                for (let i = 0; i < threatCount; i++) {
+                    const threat = await contract.threats(i);
+                    const threatElement = document.createElement("p");
+                    threatElement.textContent = `Threat ${i + 1}: ${threat.description}, Level: ${threat.level}, Timestamp: ${threat.timestamp}`;
+                    threatListDiv.appendChild(threatElement);
+                }
+            } catch (error) {
+                console.error("Failed to fetch all threats", error);
+            }
+        };
+    </script>
+</body>
+</html>
